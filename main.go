@@ -84,9 +84,9 @@ func main() {
 	flag.Parse()
 
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(httprate.LimitByIP(1000, 1*time.Minute))
 	r.Use(middleware.Heartbeat("/healthz"))
-	r.Use(httprate.LimitByIP(100, 1*time.Minute))
+	r.Use(middleware.Logger)
 
 	coll := newCollector(ttl)
 	r.With(middleware.AllowContentType("application/json")).Post(fmt.Sprintf("/{%s}", paramIdent), coll.Post)
