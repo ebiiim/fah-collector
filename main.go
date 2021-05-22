@@ -21,13 +21,20 @@ type collector struct {
 	CachedJSON string
 	LastCached time.Time
 	CacheTTL   time.Duration
+	KeyTTL     time.Duration
 }
 
 func newCollector(cacheTTL time.Duration) *collector {
 	c := &collector{
 		CacheTTL: cacheTTL,
+		KeyTTL:   15 * time.Second,
 	}
 	return c
+}
+
+type data struct {
+	jsonData string
+	ts       time.Time
 }
 
 func (c *collector) Post(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +44,7 @@ func (c *collector) Post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ident := chi.URLParam(r, paramIdent)
-	c.M.Store(ident, p)
+	c.M.Store(ident, data{jsonData: string(p), ts: time.Now()})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -46,7 +53,16 @@ func (c *collector) GetAll(w http.ResponseWriter, r *http.Request) {
 		log.Println("INFO: creating JSON")
 		c.CachedJSON = "{"
 		c.M.Range(func(key, value interface{}) bool {
-			c.CachedJSON += fmt.Sprintf("\"%s\": %s,", key, value)
+			d, ok := value.(data)
+			if !ok {
+				log.Println("GetAll: invalid data type")
+				return true
+			}
+			if d.ts.Add(c.KeyTTL).Before(time.Now()) {
+				c.M.Delete(key) // old data
+				return true
+			}
+			c.CachedJSON += fmt.Sprintf("\"%s\": %s,", key, d.jsonData)
 			return true
 		})
 		if len(c.CachedJSON) == 1 {
