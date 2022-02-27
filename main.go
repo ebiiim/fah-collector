@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -14,20 +17,20 @@ import (
 	"github.com/go-chi/httprate"
 )
 
-const paramIdent = "paramIdent"
-
 type collector struct {
 	M          sync.Map
 	CachedJSON string
 	LastCached time.Time
 	CacheTTL   time.Duration
 	KeyTTL     time.Duration
+	PK         string
 }
 
-func newCollector(cacheTTL time.Duration) *collector {
+func newCollector(cacheTTL time.Duration, keyTTL time.Duration, pk string) *collector {
 	c := &collector{
 		CacheTTL: cacheTTL,
-		KeyTTL:   15 * time.Second,
+		KeyTTL:   keyTTL,
+		PK:       pk,
 	}
 	return c
 }
@@ -43,8 +46,29 @@ func (c *collector) Post(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ident := chi.URLParam(r, paramIdent)
-	c.M.Store(ident, data{jsonData: string(p), ts: time.Now()})
+	// parse ident
+	l := []map[string]interface{}{}
+	if err := json.NewDecoder(bytes.NewBuffer(p)).Decode(&l); err != nil {
+		log.Printf("Post: err=%v s=%s", err, string(p))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for _, v := range l {
+		ident, ok := v[c.PK]
+		if !ok {
+			log.Printf("no value found c.PK=%s v=%v", c.PK, v)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		p, err := json.Marshal(v)
+		if !ok {
+			log.Printf("could not marshal err=%v v=%v", err, v)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		c.M.Store(ident, data{jsonData: string(p), ts: time.Now()})
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -77,10 +101,19 @@ func (c *collector) GetAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [-port] [-refresh] [-clientDropTimer] [-pk]\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 	var port string
 	flag.StringVar(&port, "port", "80", "Listen Port")
 	var ttl time.Duration
-	flag.DurationVar(&ttl, "refresh", 5*time.Second, "Refresh Interval")
+	flag.DurationVar(&ttl, "refresh", 1*time.Second, "Cache data JSON for T; Viewers get same result during the time; e.g., \"1s\"")
+	var cdt time.Duration
+	flag.DurationVar(&cdt, "clientDropTimer", 15*time.Second, "Drop client from data if no updates for T; e.g., \"15s\"")
+	var pk string
+	flag.StringVar(&pk, "pk", "sc_hostname", "Key for identify clients; Default is Pod name (sc_hostname)")
+
 	flag.Parse()
 
 	r := chi.NewRouter()
@@ -88,8 +121,8 @@ func main() {
 	r.Use(middleware.Heartbeat("/healthz"))
 	r.Use(middleware.Logger)
 
-	coll := newCollector(ttl)
-	r.With(middleware.AllowContentType("application/json")).Post(fmt.Sprintf("/{%s}", paramIdent), coll.Post)
+	coll := newCollector(ttl, cdt, pk)
+	r.With(middleware.AllowContentType("application/json")).Post("/", coll.Post)
 	r.Get("/all", coll.GetAll)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatal(err)
