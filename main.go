@@ -106,13 +106,13 @@ func main() {
 		flag.PrintDefaults()
 	}
 	var port string
-	flag.StringVar(&port, "port", "80", "Listen Port")
+	flag.StringVar(&port, "port", "80", "Listen port")
 	var ttl time.Duration
-	flag.DurationVar(&ttl, "refresh", 1*time.Second, "Cache data JSON for T; Viewers get same result during the time; e.g., \"1s\"")
+	flag.DurationVar(&ttl, "refresh", 1*time.Second, "Cache data JSON for given time; Viewers get the same result during the time")
 	var cdt time.Duration
-	flag.DurationVar(&cdt, "clientDropTimer", 15*time.Second, "Drop client from data if no updates for T; e.g., \"15s\"")
+	flag.DurationVar(&cdt, "clientDropTimer", 15*time.Second, "Drop client from data if no updates for given time")
 	var pk string
-	flag.StringVar(&pk, "pk", "sc_hostname", "Key for identify clients; Default is Pod name (sc_hostname)")
+	flag.StringVar(&pk, "pk", "sc_hostname", "Key for identify clients; Default is Pod name")
 
 	flag.Parse()
 
