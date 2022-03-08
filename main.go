@@ -72,7 +72,7 @@ func (c *collector) Post(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *collector) GetAll(w http.ResponseWriter, r *http.Request) {
+func (c *collector) updateCachedJSONIfNeeded() {
 	if c.LastCached.Add(c.CacheTTL).Before(time.Now()) {
 		log.Println("INFO: creating JSON")
 		c.CachedJSON = "{"
@@ -96,6 +96,10 @@ func (c *collector) GetAll(w http.ResponseWriter, r *http.Request) {
 		}
 		c.LastCached = time.Now()
 	}
+}
+
+func (c *collector) GetAll(w http.ResponseWriter, r *http.Request) {
+	c.updateCachedJSONIfNeeded()
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(c.CachedJSON))
 }
